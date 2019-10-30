@@ -5,6 +5,7 @@ using UnityEngine;
 
 public class MapGenerator : MonoBehaviour
 {
+    #region variables
     public int mapWidth;
     public int mapHeight;
     public string seed;
@@ -26,12 +27,14 @@ public class MapGenerator : MonoBehaviour
     int[,] map;
     int[,] mapCycle;
     int[,] borderedMap;
+    #endregion
 
     public void Start()
     {
         GenerateNewMap();
     }
 
+    //TODO: Can be removed in final product
     public void Update()
     {
         if (Input.GetMouseButtonDown(0))
@@ -52,6 +55,36 @@ public class MapGenerator : MonoBehaviour
         AddMapBorder();
     }
 
+    #region RandomGen
+    // Fills the map with random values to give the algorithm a staring point
+    private void FillMapWithRandomTiles()
+    {
+        if (useRandomSeed)
+            seed = DateTime.Now.Ticks.ToString();
+
+        System.Random pseudoRandomNumber = new System.Random(seed.GetHashCode());
+
+        //TODO: Function RandomFillWalls()
+        for (int x = 0; x < mapWidth; x++)
+        {
+            for (int y = 0; y < mapHeight; y++)
+            {
+                //TODO: Function IsMapBorder(x, y, tile you want returned) ???
+                // Maybe have the walls set elswhere before the fill so you can choose the type ???
+                if (x == 0 || x == mapWidth - 1 || y == 0 || y == mapHeight - 1)
+                {
+                    map[x, y] = 1;
+                }
+                else
+                {
+                    map[x, y] = (pseudoRandomNumber.Next(0, 100) < randomWallFillPercent) ? 1 : 0;
+                }
+            }
+        }
+
+        //TODO: Add functionallity for other types like water
+    }
+
     // Adds a border to the generated map
     private void AddMapBorder()
     {
@@ -62,18 +95,33 @@ public class MapGenerator : MonoBehaviour
             for (int y = 0; y < borderedMap.GetLength(1); y++)
             {
                 if (x >= borderSize && x < mapWidth + borderSize && y >= borderSize && y < mapHeight + borderSize)
-                {
                     borderedMap[x, y] = map[x - borderSize, y - borderSize];
-                }
                 else
-                {
                     borderedMap[x, y] = 1;
-                }
             }
         }
     }
+    #endregion
 
-    // Gets all the regions of the given tile type using floodfill
+    #region MapRegionHandeling
+    // Fills the maps regions based on map generation paramaters
+    private void FillMapRegions()
+    {
+        List<List<Coord>> wallRegions = GetRegions(1);
+        FillRegion(wallRegions, wallThresholdSize, 0);
+
+        List<List<Coord>> roomRegions = GetRegions(0);
+        List<Room> survivingRooms = new List<Room>();
+        FillRegion(roomRegions, roomThresholdSize, 1, true, survivingRooms);
+
+        survivingRooms.Sort();
+        survivingRooms[0].isMainRoom = true;
+        survivingRooms[0].isAccessibleFromMainRoom = true;
+
+        ConnectClosestRooms(survivingRooms);
+    }
+
+    // Gets all the regions of the given tile type
     private List<List<Coord>> GetRegions(int tileType)
     {
         List<List<Coord>> regions = new List<List<Coord>>();
@@ -98,21 +146,39 @@ public class MapGenerator : MonoBehaviour
         return regions;
     }
 
-    // Fills the maps regions based on map generation paramaters
-    private void FillMapRegions()
+    // Get all the tiles in the given region using floodfill
+    private List<Coord> GetRegionTiles(int startX, int startY)
     {
-        List<List<Coord>> wallRegions = GetRegions(1);
-        FillRegion(wallRegions, wallThresholdSize, 0);
+        List<Coord> tiles = new List<Coord>();
+        int[,] mapFlags = new int[mapWidth, mapHeight];
+        int tileType = map[startX, startY];
 
-        List<List<Coord>> roomRegions = GetRegions(0);
-        List<Room> survivingRooms = new List<Room>();
-        FillRegion(roomRegions, roomThresholdSize, 1, true, survivingRooms);
+        Queue<Coord> queue = new Queue<Coord>();
+        queue.Enqueue(new Coord(startX, startY));
+        mapFlags[startX, startY] = 1;
 
-        survivingRooms.Sort();
-        survivingRooms[0].isMainRoom = true;
-        survivingRooms[0].isAccessibleFromMainRoom = true;
+        while (queue.Count > 0)
+        {
+            Coord tile = queue.Dequeue();
+            tiles.Add(tile);
 
-        ConnectClosestRooms(survivingRooms);
+            for (int x = tile.tileX - 1; x <= tile.tileX + 1; x++)
+            {
+                for (int y = tile.tileY - 1; y <= tile.tileY + 1; y++)
+                {
+                    if (IsInMapRange(x, y) && (y == tile.tileY || x == tile.tileX))
+                    {
+                        if (mapFlags[x, y] == 0 && map[x, y] == tileType)
+                        {
+                            mapFlags[x, y] = 1;
+                            queue.Enqueue(new Coord(x, y));
+                        }
+                    }
+                }
+            }
+        }
+
+        return tiles;
     }
 
     // Fills the given region with the given tile
@@ -124,12 +190,14 @@ public class MapGenerator : MonoBehaviour
             {
                 foreach (Coord tile in region)
                     map[tile.tileX, tile.tileY] = newTileType;
-            } else if (isRoom)
+            }
+            else if (isRoom)
             {
                 survivingRooms.Add(new Room(region, map));
             }
         }
     }
+    #endregion
 
     private void ConnectClosestRooms(List<Room> allRooms, bool forceAccessiblityFromMainRoom = false)
     {
@@ -303,73 +371,10 @@ public class MapGenerator : MonoBehaviour
         return new Vector2(-mapWidth / 2 + .5f + tile.tileX, -mapHeight / 2 + .5f + tile.tileY);
     }
 
-    private List<Coord> GetRegionTiles(int startX, int startY)
-    {
-        List<Coord> tiles = new List<Coord>();
-        int[,] mapFlags = new int[mapWidth, mapHeight];
-        int tileType = map[startX, startY];
-
-        Queue<Coord> queue = new Queue<Coord>();
-        queue.Enqueue(new Coord(startX, startY));
-        mapFlags[startX, startY] = 1;
-
-        while (queue.Count > 0)
-        {
-            Coord tile = queue.Dequeue();
-            tiles.Add(tile);
-
-            for(int x = tile.tileX - 1; x <= tile.tileX + 1; x++)
-            {
-                for (int y = tile.tileY - 1; y <= tile.tileY + 1; y++)
-                {
-                    if (IsInMapRange(x, y) && (y == tile.tileY || x == tile.tileX))
-                    {
-                        if(mapFlags[x,y] == 0 && map[x,y] == tileType)
-                        {
-                            mapFlags[x, y] = 1;
-                            queue.Enqueue(new Coord(x, y));
-                        }
-                    }
-                }
-            }
-        }
-
-        return tiles;
-    }
-
     // Checks if x and y are within the map boundries 
     private bool IsInMapRange(int x, int y)
     {
         return x >= 0 && x < mapWidth && y >= 0 && y < mapHeight;
-    }
-
-    // Fills the map with random values to give the algorithm a staring point
-    private void FillMapWithRandomTiles()
-    {
-        if (useRandomSeed)
-            seed = DateTime.Now.Ticks.ToString();
-
-        System.Random pseudoRandomNumber = new System.Random(seed.GetHashCode());
-
-        //TODO: Function RandomFillWalls()
-        for (int x = 0; x < mapWidth; x++)
-        {
-            for (int y = 0; y < mapHeight; y++)
-            {
-                //TODO: Function IsMapBorder(x, y, tile you want returned) ???
-                // Maybe have the walls set elswhere before the fill so you can choose the type ???
-                if (x == 0 || x == mapWidth - 1 || y == 0 || y == mapHeight - 1)
-                {
-                    map[x, y] = 1;
-                }
-                else
-                {
-                    map[x, y] = (pseudoRandomNumber.Next(0, 100) < randomWallFillPercent) ? 1 : 0;
-                }
-            }
-        }
-
-        //TODO: Add functionallity for other types like water
     }
 
     private void SmoothMap()
@@ -419,6 +424,8 @@ public class MapGenerator : MonoBehaviour
         return wallCount;
     }
 
+
+    //TODO: Can be removed in final product
     private void OnDrawGizmos()
     {
         if (borderedMap != null)
