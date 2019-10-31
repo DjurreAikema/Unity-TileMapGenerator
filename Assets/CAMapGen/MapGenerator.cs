@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System;
 using UnityEngine;
+using UnityEngine.Tilemaps;
+using UnityEditor;
 
 public class MapGenerator : MonoBehaviour
 {
@@ -27,6 +29,11 @@ public class MapGenerator : MonoBehaviour
     int[,] map;
     int[,] mapCycle;
     int[,] borderedMap;
+
+    public Tilemap topMap;
+    public Tilemap baseMap;
+    public Tile topTile;
+    public TerrainTile baseTile;
     #endregion
 
     public void Start()
@@ -38,7 +45,11 @@ public class MapGenerator : MonoBehaviour
     public void Update()
     {
         if (Input.GetMouseButtonDown(0))
+        {
+            topMap.ClearAllTiles();
+            baseMap.ClearAllTiles();
             GenerateNewMap();
+        }
     }
 
     // Generates a new int[,] map
@@ -53,6 +64,17 @@ public class MapGenerator : MonoBehaviour
 
         FillMapRegions();
         AddMapBorder();
+
+        for (int x = 0; x < mapWidth + borderSize * 2; x++)
+        {
+            for (int y = 0; y < mapHeight + borderSize * 2; y++)
+            {
+                if (borderedMap[x, y] == 1)
+                    topMap.SetTile(new Vector3Int(-x + mapWidth / 2, -y + mapHeight / 2, 0), topTile);
+                else
+                    baseMap.SetTile(new Vector3Int(-x + mapWidth / 2, -y + mapHeight / 2, 0), baseTile);
+            }
+        }
     }
 
     #region RandomGen
@@ -422,22 +444,5 @@ public class MapGenerator : MonoBehaviour
     private bool IsInMapRange(int x, int y)
     {
         return x >= 0 && x < mapWidth && y >= 0 && y < mapHeight;
-    }
-
-    //TODO: Can be removed in final product
-    private void OnDrawGizmos()
-    {
-        if (borderedMap != null)
-        {
-            for (int x = 0; x < borderedMap.GetLength(0); x++)
-            {
-                for (int y = 0; y < borderedMap.GetLength(1); y++)
-                {
-                    Gizmos.color = (borderedMap[x, y] == 1) ? Color.black : Color.white;
-                    Vector2 position = new Vector2(-borderedMap.GetLength(0) / 2 + x + .5f, -borderedMap.GetLength(1) / 2 + y + .5f);
-                    Gizmos.DrawCube(position, new Vector2(1, 1));
-                }
-            }
-        }
     }
 }
